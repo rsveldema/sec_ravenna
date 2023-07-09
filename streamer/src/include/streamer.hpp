@@ -13,11 +13,26 @@
 
 namespace streamer
 {
-    class PacketPayload
+    class IO;
+
+    class Result
     {
+    public:
+        Result(int ret) : m_ret(ret) {}
+
+        [[nodiscard]] int code() const { return m_ret; }
+
+        [[nodiscard]] bool success() const { return m_ret == 0; }
+
+        [[nodiscard]] static Result ok() { return SUCCESS_CODE; }
+
+        constexpr static int SUCCESS_CODE = 0;
+
     private:
-        std::array<uint8_t, 1500> m_data;
+        int m_ret;
     };
+
+    using PacketPayload = std::array<uint8_t, 1500>;
 
     class ServerAddress
     {
@@ -68,33 +83,44 @@ namespace streamer
 
     class ClientConnection
     {
+    public:
+        ClientConnection(IO &io, int fd) : m_io(io), m_fd(fd) {}
+
         void send(const std::unique_ptr<Packet> &pkt);
         std::optional<std::unique_ptr<Packet>> recv();
+
+    private:
+        IO &m_io;
+        int m_fd;
     };
+
+
+    struct ServerSocketDescriptor
+    {
+        int m_fd;
+        sockaddr_in m_addr;
+        socklen_t m_addr_len = sizeof(m_addr);
+
+        ServerSocketDescriptor(int fd) : m_fd(fd) {}
+    };
+
 
     class ServerSocket
     {
     public:
-        ServerSocket(int fd) : m_fd(fd) {}
+        ServerSocket(IO &io, int fd) : m_io(io), m_descr(fd) {}
 
-        std::optional<ClientConnection> listen(const Timeout &timeout);
+        [[nodiscard]] Result listen(const Timeout &timeout);
 
     private:
-        int m_fd;
+        IO &m_io;
+        ServerSocketDescriptor m_descr;
     };
 
-    class Result
+    class CallbackHandler
     {
     public:
-        Result(int ret) : m_ret(ret) {}
-        int code() const { return m_ret; }
-        bool success() const { return m_ret == 0; }
-
-        static Result ok() { return SUCCESS_CODE; }
-
-        constexpr static int SUCCESS_CODE = 0;
-    private:
-        int m_ret;
+        virtual void handle_new_connection(ClientConnection &c) = 0;
     };
 
 
@@ -102,21 +128,28 @@ namespace streamer
     class IO
     {
     public:
+        IO(CallbackHandler &cb) : m_cb(cb) {}
+        ~IO();
+
         Result init();
 
-        std::optional<ServerSocket> create_server_socket(in_port_t port);
-        void multicast(const ServerAddress &addr, Packet &pkt);
+        [[nodiscard]] std::optional<ServerSocket> create_server_socket(in_port_t port);
 
+        [[nodiscard]] Result submit_accept(ServerSocketDescriptor& descriptor);
 
-        ~IO();
+        void event_loop();
+
     private:
+        CallbackHandler &m_cb;
+
+        bool m_init = false;
         io_uring m_ring;
         io_uring_buf_ring *m_buf_ring = nullptr;
         unsigned char *m_buffer_base = nullptr;
 
         constexpr static size_t BUF_SHIFT = 12; /* 4k */
 
-        constexpr static size_t QUEUE_DEPTH = 64;
+        constexpr static size_t QUEUE_DEPTH = 32;
 
         constexpr static size_t CQES = (QUEUE_DEPTH * 16);
         constexpr static size_t NUM_BUFFERS = CQES;
@@ -136,11 +169,11 @@ namespace streamer
 
         /** size of the uring buffer headers
          * and the buffer area size
-        */
-        consteval static size_t get_total_ring_size() {
-            return
-            (sizeof(io_uring_buf) * NUM_BUFFERS) +
-            (buffer_size() * NUM_BUFFERS);
+         */
+        consteval static size_t get_total_ring_size()
+        {
+            return (sizeof(io_uring_buf) * NUM_BUFFERS) +
+                   (buffer_size() * NUM_BUFFERS);
         }
     };
 }
