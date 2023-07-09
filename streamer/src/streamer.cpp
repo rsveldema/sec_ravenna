@@ -9,16 +9,17 @@
 
 namespace streamer
 {
-    constexpr uint64_t FLAG_IS_ACCEPT = 0xdead;
-
     Result IO::submit_accept(ServerSocketDescriptor &descriptor)
     {
         if (auto *sqe = io_uring_get_sqe(&m_ring))
         {
-            printf("submit fd %d\n", descriptor.m_fd);
+            //printf("submit fd %d\n", descriptor.m_fd);
             io_uring_prep_multishot_accept(sqe, descriptor.m_fd,
                                            (sockaddr *)&descriptor.m_addr, &descriptor.m_addr_len, 0);
-            io_uring_sqe_set_data64(sqe, FLAG_IS_ACCEPT);
+
+            CompletionQueueUserData cd(CQ_Type::ACCEPT);
+
+            io_uring_sqe_set_data64(sqe, cd.get_value());
 
             const auto ret = io_uring_submit(&m_ring);
             if (ret < 0)
@@ -26,7 +27,7 @@ namespace streamer
                 printf("failed to submit sqe\n");
                 return -ret;
             }
-            printf("submit %d entries to submit-queue\n", ret);
+            //printf("submit %d entries to submit-queue\n", ret);
             return Result::ok();
         }
         else
@@ -39,7 +40,7 @@ namespace streamer
 
     Result ServerSocket::listen(const Timeout &timeout)
     {
-        printf("submit accept\n");
+        //printf("submit accept\n");
         // queue_accept_conn(ring, recv_s0, args);
         if (const auto ret = m_io.submit_accept(m_descr); !ret.success())
         {
@@ -59,7 +60,7 @@ namespace streamer
             fprintf(stderr, "sock_init: %s\n", strerror(errno));
             return std::nullopt;
         }
-        printf("allocated fd %d for server socket\n", fd);
+        //printf("allocated fd %d for server socket\n", fd);
 
         {
             int32_t val = 1;
@@ -86,7 +87,7 @@ namespace streamer
             }
             else
             {
-                sockaddr_in addr {
+                sockaddr_in addr{
                     .sin_family = af,
                     .sin_port = htons(port),
                     .sin_addr = {INADDR_ANY}};
@@ -220,16 +221,28 @@ namespace streamer
 
             if (int ret = io_uring_wait_cqe(&m_ring, &pcqe); ret == 0)
             {
-                printf("got cqe\n");
                 const auto cqe = *pcqe;
                 io_uring_cqe_seen(&m_ring, pcqe);
 
-                if (1)
+                const CompletionQueueUserData user_data = io_uring_cqe_get_data64(&cqe);
+
+                //printf("user data = %lx\n", user_data.get_value());
+                switch (user_data.get_type())
+                {
+                case CQ_Type::ACCEPT:
                 {
                     const auto new_socket = cqe.res;
 
                     ClientConnection cc(*this, new_socket);
                     m_cb.handle_new_connection(cc);
+                    break;
+                }
+
+                default:
+                {
+                    printf("UNKNOWN CQE type\n");
+                    break;
+                }
                 }
             }
             else

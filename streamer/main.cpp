@@ -10,7 +10,10 @@ class MyCallback : public streamer::CallbackHandler
     void handle_new_connection(streamer::ClientConnection &c)
     {
         printf("got new client connection\n");
+        m_conn.push_back(c);
     }
+
+    std::vector<streamer::ClientConnection> m_conn;
 };
 
 int main(int argc, char** argv)

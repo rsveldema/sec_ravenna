@@ -94,7 +94,6 @@ namespace streamer
         int m_fd;
     };
 
-
     struct ServerSocketDescriptor
     {
         int m_fd;
@@ -104,6 +103,35 @@ namespace streamer
         ServerSocketDescriptor(int fd) : m_fd(fd) {}
     };
 
+
+    enum class CQ_Type : uint8_t
+    {
+        NONE,
+        ACCEPT,
+        READ,
+        WRITE,
+        CLOSE
+    };
+
+    class CompletionQueueUserData
+    {
+    public:
+        CompletionQueueUserData(CQ_Type type) : m_value(get_type_byte(type)) {}
+        CompletionQueueUserData(uint64_t value) : m_value(value) {}
+
+        uint64_t get_value() const { return m_value; }
+
+        CQ_Type get_type() const {
+            return static_cast<CQ_Type>(m_value & 0xff);
+        }
+
+    private:
+        uint64_t m_value;
+
+        static uint8_t get_type_byte(CQ_Type type) {
+            return static_cast<uint8_t>(type);
+        }
+    };
 
     class ServerSocket
     {
@@ -123,8 +151,6 @@ namespace streamer
         virtual void handle_new_connection(ClientConnection &c) = 0;
     };
 
-
-
     class IO
     {
     public:
@@ -135,7 +161,7 @@ namespace streamer
 
         [[nodiscard]] std::optional<ServerSocket> create_server_socket(in_port_t port);
 
-        [[nodiscard]] Result submit_accept(ServerSocketDescriptor& descriptor);
+        [[nodiscard]] Result submit_accept(ServerSocketDescriptor &descriptor);
 
         void event_loop();
 
