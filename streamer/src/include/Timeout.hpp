@@ -2,6 +2,11 @@
 
 #include <chrono>
 
+
+/**
+ * @brief Track whether a deadline has passed
+ *
+ */
 class Timeout
 {
 public:
