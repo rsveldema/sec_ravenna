@@ -2,6 +2,8 @@
 #include <Timeout.hpp>
 #include <chrono>
 
+#include <discovery.hpp>
+
 using namespace std::chrono_literals;
 
 class MyCallback : public streamer::CallbackHandler
@@ -18,7 +20,8 @@ class MyCallback : public streamer::CallbackHandler
 
 int main(int argc, char** argv)
 {
-    printf("BOOTUP\n");
+    printf("Boot Ravenna Device\n");
+
     MyCallback cb;
     streamer::IO io(cb);
 
